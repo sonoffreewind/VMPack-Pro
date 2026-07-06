@@ -49,9 +49,6 @@ from heuristics import (
     VMPack_MixPack,
     SafeMix,
     VMPack_SafeMix,
-    # Priority-only variant for ablation
-    MixVM201Priority,
-    VMPack_MixVM201Priority,
 )
 from utils import bootstrap_mean_ci, cliffs_delta
 
@@ -65,9 +62,6 @@ ALGORITHMS = {
     # SafeMix two-class heuristic and full-pipeline version
     "SafeMix": SafeMix,
     "VMPack_SafeMix": VMPack_SafeMix,
-    # Priority-only variant for ablation
-    "MixVM201Priority": MixVM201Priority,
-    "VMPack_MixVM201Priority": VMPack_MixVM201Priority,
 }
 
 

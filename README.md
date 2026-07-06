@@ -1,8 +1,8 @@
-# Improving the Bottleneck Stage of VMPack for Structured Virtual Machine Allocation
+# Safe Mixed-Packing Heuristics for a Structured 2-DVBP Bottleneck in Virtual Machine Allocation
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg )](https://opensource.org/licenses/MIT )
 
-> This repository contains the source code and experimental data for the manuscript titled *"Improving the Bottleneck Stage of VMPack for Structured Virtual Machine Allocation."* 
+> This repository contains the source code and experimental data for the manuscript titled *"Safe Mixed-Packing Heuristics for a Structured 2-DVBP Bottleneck in Virtual Machine Allocation."* 
 
 ## Description
 
@@ -91,10 +91,6 @@ vm-mixpack-algorithms/
 │   ├── tables/             ← LaTeX table files (*.tex)
 │   ├── log/                ← Subprocess output logs (when --quiet)
 │   └── figures/            ← Generated figures (PDF + PNG)
-├── article/
-│   ├── article.tex         ← Paper LaTeX source
-│   └── figures/            ← Paper figures
-└── requirements.txt
 ```
 
 ## Algorithm Implementations
@@ -121,10 +117,6 @@ The code is written in Python and requires the following libraries:
 You can install the required libraries using pip:
 ```bash
 pip install numpy sortedcontainers gurobipy
-```
-Alternatively, you can install all dependencies from the provided file:
-```bash
-pip install -r requirements.txt
 ```
 
 ## Usage
@@ -177,62 +169,7 @@ python run.py --steps generate_data
 
 Or use `data.py` directly via `run_experiments.py` which auto-generates missing data.
 
-#### Step 2: Run Heuristic Experiments
-
-```bash
-# Full heuristic UP sweep (UP=10,20,50,100,500,1000)
-python run.py --steps heuristic
-
-# Or directly using run_experiments.py
-python run_experiments.py --mode heuristic --T 7 --UP 1000 --n_inst 100 --tag up1000
-```
-
-#### Step 3: Run Exact Solver Experiments
-
-```bash
-# Single maxtime run with checkpoint callbacks (produces 1s/5s/10s data)
-python run_solvers_only.py --maxtime 10 --checkpoint_times 1,5,10 --n_inst 100
-```
-
-**Gurobi parameters** (set identically in `vanilla_mip.py` and the P&B pricing
-subproblems in `pricebranch.py`, for fair single-threaded comparison):
-`Threads=1`, `TimeLimit=10`, `MemLimit=24`, `Seed=42`.
-- `maxtime=10` is the hard wall-clock budget for each Gurobi run.
-- `checkpoint_times=1,5,10` records solver state (incumbent, bound, gap, status)
-  at 1s/5s/10s via a Gurobi callback, without re-running the solver.
-- P&B converges within 1s, so its result is shared across all checkpoints.
-- Run both scenarios: `--fun_case improvevmpack` (default) and `--fun_case mixalgos`.
-
-#### Step 4: Export Organized Wide-Format CSVs
-
-After running heuristics and (optionally) exact solvers, export organized wide-format CSVs:
-
-```bash
-# Export both fun_cases (mixalgos + improvevmpack)
-python run.py --steps export_unified
-
-# Or directly:
-python export_unified_results.py --fun_case mixalgos
-python export_unified_results.py --fun_case improvevmpack --with_solvers
-```
-
-Output: `result/mixalgos/random_*.csv` and `result/improvevmpack/random_*.csv`
-(8 files per fun_case: random_s1~l2 + huawei + microsoft, one row per instance)
-
-#### Step 5: Generate LaTeX Tables
-
-```bash
-python gen_tables.py --output_dir ./result/ --tex_dir ./result/tables/
-python gen_gap_summary.py --output_dir ./result/ --tag maxtime --save_csv --tex_dir ./result/tables/
-```
-
-#### Step 6: Generate Figures
-
-```bash
-python plot_results.py --figure all --output_dir ./result/
-```
-
-#### Step 6: Process Public Traces
+#### Step 2: Process Public Traces
 
 The two raw trace files are **not included in this repository** (they are too
 large to host). Download them manually into a `raw_data/` directory at the
@@ -285,7 +222,62 @@ python process_microsoft_vmtable.py --input raw_data/trace_data_vmtable_vmtable.
 - In the `mixalgos` scenario, $s=1$ VMs are discarded to construct two-class
   bottleneck instances; in `improvevmpack`, all three classes are retained.
 
-#### Step 7: Trace Experiments
+#### Step 3: Run Heuristic Experiments
+
+```bash
+# Full heuristic UP sweep (UP=10,20,50,100,500,1000)
+python run.py --steps heuristic
+
+# Or directly using run_experiments.py
+python run_experiments.py --mode heuristic --T 7 --UP 1000 --n_inst 100 --tag up1000
+```
+
+#### Step 4: Run Exact Solver Experiments
+
+```bash
+# Single maxtime run with checkpoint callbacks (produces 1s/5s/10s data)
+python run_solvers_only.py --maxtime 10 --checkpoint_times 1,5,10 --n_inst 100
+```
+
+**Gurobi parameters** (set identically in `vanilla_mip.py` and the P&B pricing
+subproblems in `pricebranch.py`, for fair single-threaded comparison):
+`Threads=1`, `TimeLimit=10`, `MemLimit=24`, `Seed=42`.
+- `maxtime=10` is the hard wall-clock budget for each Gurobi run.
+- `checkpoint_times=1,5,10` records solver state (incumbent, bound, gap, status)
+  at 1s/5s/10s via a Gurobi callback, without re-running the solver.
+- P&B converges within 1s, so its result is shared across all checkpoints.
+- Run both scenarios: `--fun_case improvevmpack` (default) and `--fun_case mixalgos`.
+
+#### Step 5: Export Organized Wide-Format CSVs
+
+After running heuristics and (optionally) exact solvers, export organized wide-format CSVs:
+
+```bash
+# Export both fun_cases (mixalgos + improvevmpack)
+python run.py --steps export_unified
+
+# Or directly:
+python export_unified_results.py --fun_case mixalgos
+python export_unified_results.py --fun_case improvevmpack --with_solvers
+```
+
+Output: `result/mixalgos/random_*.csv` and `result/improvevmpack/random_*.csv`
+(8 files per fun_case: random_s1~l2 + huawei + microsoft, one row per instance)
+
+#### Step 6: Generate LaTeX Tables
+
+```bash
+python gen_tables.py --output_dir ./result/ --tex_dir ./result/tables/
+python gen_gap_summary.py --output_dir ./result/ --tag maxtime --save_csv --tex_dir ./result/tables/
+```
+
+#### Step 7: Generate Figures
+
+```bash
+python plot_results.py --figure all --output_dir ./result/
+```
+
+#### Step 8: Trace Experiments
 
 ```bash
 python run_trace_experiments.py \
@@ -308,10 +300,10 @@ A patent application (Application No. 202510593589.9) related to the underlying 
 If you use this work or the provided code in your research, please cite our manuscript. To maintain anonymity during peer review, author information will be provided upon formal publication. The entry can be updated with the complete publication details at that time.
 
 ```bibtex
-@misc{Anonymous_2025_preprint,
-  title     = {Improving VMPack: Heuristic Mixed Packing Algorithms for Two Specific Virtual Machine Classes},
+@misc{Anonymous_2026_preprint,
+  title     = {Safe Mixed-Packing Heuristics for a Structured 2-DVBP Bottleneck in Virtual Machine Allocation},
   author    = {Anonymous Author(s)},
   note      = {Manuscript under review},
-  year      = {2025}
+  year      = {2026}
 }
 ```

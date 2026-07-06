@@ -40,8 +40,6 @@ from heuristics import (
     SafeMix, VMPack_SafeMix,
     BFD, FFD,
     VMPack_MixVM301, VMPack_MixVM201, VMPack_MixPack,
-    # Priority-only variant for ablation
-    MixVM201Priority, VMPack_MixVM201Priority,
 )
 from utils import bootstrap_mean_ci, cliffs_delta
 # CG‑Benchmark / VanillaMIP are imported lazily in run_scale_experiment()
@@ -78,7 +76,6 @@ HEURISTIC_CONFIGS = {
             'MixVM201Pro':    MixVM201Pro,
             'MixPack':        MixPack,
             'SafeMix':        SafeMix,
-            'MixVM201Priority': MixVM201Priority,
             'BFD':            BFD,
             'FFD':            FFD,
         },
@@ -93,7 +90,6 @@ HEURISTIC_CONFIGS = {
             'VMPack_MixVM201Pro': VMPack_MixVM201Pro,
             'VMPack_MixPack':     VMPack_MixPack,
             'VMPack_SafeMix':     VMPack_SafeMix,
-            'VMPack_MixVM201Priority': VMPack_MixVM201Priority,
             'BFD':      BFD,
             'FFD':      FFD,
         },

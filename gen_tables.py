@@ -231,10 +231,12 @@ def gen_heuristic_empowerment(output_dir, tag=''):
     print(r"\centering")
     print(r"\caption{Impact of MixVM201Pro warm starts on time-limited CG-Benchmark and "
           r"VanillaMIP solver performance under a 1-second time limit, matching the "
-          r"exact-solver comparison in Table~\ref{tab:exact_comparison}. Here CG-Benchmark "
-          r"denotes the column-generation-based pattern benchmark, and CG-Benchmark+Mix "
-          r"initializes its pattern set with MixVM201Pro configurations. The status vector "
-          r"is reported as [Optimal / Feasible / NoSol / OOM].}")
+          r"exact-solver comparison in Table~\ref{tab:exact_comparison}. The column header "
+          r"``NoMix $\rightarrow$ Mix'' reports values without (NoMix) and with (Mix) "
+          r"MixVM201Pro initialization. Here NoMix denotes the NoMixPack baseline, in which "
+          r"each PM is filled with a single VM type ($L_0$ or $L_2$) without mixing, while "
+          r"Mix initializes the solver with the MixVM201Pro heuristic solution. The status "
+          r"vector is reported as [Optimal / Feasible / NoSol / OOM].}")
 
     print(r"\label{tab:heuristic_lift}")
     print(r"\fontsize{8}{11}\selectfont")
@@ -314,7 +316,6 @@ def gen_scale_sweep_table(output_dir="./result/", tag=""):
         ('NoMixPack', 'NoMixPack'),
         ('MixVM301', 'MixVM301'),
         ('MixVM201', 'MixVM201'),
-        # ('MixVM201Priority', 'MixVM201Priority'),
         ('MixVM201Pro', 'MixVM201Pro'),
         ('MixPack', 'MixPack'),
         # ('SafeMix', 'SafeMix'),
@@ -331,13 +332,14 @@ def gen_scale_sweep_table(output_dir="./result/", tag=""):
           r"instance scales on two-class synthetic bottleneck instances. "
           r"$\overline{A(L)}$ denotes the average PM count, "
           r"$\overline{Gap}_{\mathrm{Opt}}$ the average optimality gap (\%) "
-          r"against certified optima on the exact-verifiable scales (averaged only over "
-          r"certified instances within the 1-second time limit; denominators in "
-          r"Table~\ref{tab:exact_gap_subset}), and $\overline{T}$ the average running "
-          r"time in milliseconds. The last column reports the reduction in average PM "
-          r"count achieved by MixVM201Pro relative to MixVM301. As in "
-          r"Table~\ref{tab:heuristic_mixalgos}, the certified optima are proven by "
-          r"branch-and-bound and are independent of the warm-start source.}")
+          r"against certified optima (within the 1-second time limit; nearly all "
+          r"two-class instances are certified at every scale, with at least 97 out "
+          r"of 100 instances certified at the 1-second limit), and $\overline{T}$ "
+          r"the average running time in milliseconds. The last column reports the "
+          r"reduction in average PM count achieved by MixVM201Pro relative to "
+          r"MixVM301. As in Table~\ref{tab:heuristic_mixalgos}, the certified "
+          r"optima are obtained from the VanillaMIP solver warm-started with "
+          r"the MixVM201Pro heuristic.}")
     print(r"\label{tab:scale_sweep}")
     print(r"\fontsize{8}{11}\selectfont")
     print(r"\setlength{\tabcolsep}{3pt}")
@@ -451,7 +453,6 @@ def gen_runtime_scaling_table(output_dir="./result/", tag=""):
         ('NoMixPack', 'NoMixPack'),
         ('MixVM301', 'MixVM301'),
         ('MixVM201', 'MixVM201'),
-        ('MixVM201Priority', 'MixVM201Priority'),
         ('MixVM201Pro', 'MixVM201Pro'),
         ('MixPack', 'MixPack'),
         ('SafeMix', 'SafeMix'),
@@ -524,7 +525,6 @@ def gen_heuristic_comparison(output_dir, tag=''):
                 ('NoMixPack', 'NoMixPack'),
                 ('MixVM301', 'MixVM301'),
                 ('MixVM201', 'MixVM201'),
-                ('MixVM201Priority', 'MixVM201Priority'),
                 ('MixVM201Pro', 'MixVM201Pro'),
                 ('MixPack', 'MixPack'),
                 ('SafeMix', 'SafeMix'),
@@ -538,7 +538,6 @@ def gen_heuristic_comparison(output_dir, tag=''):
                 ('VMPack_NoMixPack', 'VMPack_NoMixPack'),
                 ('VMPack_MixVM301', 'VMPack_MixVM301'),
                 ('VMPack_MixVM201', 'VMPack_MixVM201'),
-                ('VMPack_MixVM201Priority', 'VMPack_MixVM201Priority'),
                 ('VMPack_MixVM201Pro', 'VMPack_MixVM201Pro'),
                 ('VMPack_MixPack', 'VMPack_MixPack'),
                 ('VMPack_SafeMix', 'VMPack_SafeMix'),
@@ -560,7 +559,8 @@ def gen_heuristic_comparison(output_dir, tag=''):
         print(r"\centering")
         if cfg_name == 'mixalgos':
             print(r"\caption{Standalone heuristic performance on L2-scale synthetic "
-                  r"bottleneck instances with $C_1=0$ and $C_0<3C_2$. Optimality gaps "
+                  r"bottleneck instances with $C_1=0$ and $C_0<3C_2$. Values in "
+                  r"parentheses are sample standard deviations. Optimality gaps "
                   r"against certified optima are reported separately in "
                   r"Table~\ref{tab:exact_gap_subset}.}")
         else:
@@ -734,9 +734,11 @@ def gen_public_trace_summary_table(huawei_dir="./huawei_trace_output/",
     """
     Generate Table: public trace filtering and instance generation summary.
 
-    Reports BOTH the two-class bottleneck variant (mixalgos, L1 discarded,
-    C1=0 by construction) and the three-class general variant (improvevmpack,
-    L1 retained). Each trace contributes two rows.
+    Reports ONE row per trace (Huawei, Microsoft) with raw requests, retained
+    dyadic requests, coverage, and batch count. These filtering statistics are
+    identical across the two trace-derived variants (the variant-specific step
+    of discarding L1 for the two-class bottleneck variant is described in the
+    text), so the table reports a single row per trace.
     """
     summaries = []
 
@@ -749,37 +751,40 @@ def gen_public_trace_summary_table(huawei_dir="./huawei_trace_output/",
         print("\n% [SKIP] Table 8: no public trace summary files found.")
         return
 
+    # Collapse to one row per trace: filtering stats are identical across variants.
+    seen = {}
+    for s in summaries:
+        if s["trace"] not in seen:
+            seen[s["trace"]] = s
+
     print("\n% ===== Public Trace Filtering Summary =====")
     print(r"\begin{table}[htbp]")
     print(r"\centering")
-    print(r"\caption{Filtering statistics for constructed trace-derived variants. "
-          r"The \emph{mixalgos} variant discards $L_1$ VMs, so $C_1=0$ by "
-          r"construction and all resulting batches are bottleneck batches by design; "
-          r"the \emph{improvevmpack} variant keeps $L_0,L_1,L_2$ VMs and generally "
-          r"does not satisfy the bottleneck condition. Coverage is computed as "
-          r"retained requests divided by raw requests and measures only the "
-          r"finite-type dyadic filtering rate, not the natural frequency of "
-          r"bottleneck windows.}")
+    print(r"\caption{Filtering statistics for the two workload traces. "
+          r"\emph{Raw requests} is the total number of VM records (Microsoft "
+          r"vmtable) or VM creation/deletion events (Huawei-East-1); "
+          r"\emph{Retained} is the number satisfying the finite-type dyadic "
+          r"power-of-two and memory-to-CPU ratio $\{1,2,4\}$ condition; "
+          r"\emph{Coverage} is Retained divided by Raw requests; \emph{Batches} "
+          r"is the number of constructed instances (1{,}000-VM batches for "
+          r"Microsoft, active-set snapshots for Huawei). These statistics are "
+          r"common to both trace-derived variants and measure only the "
+          r"finite-type dyadic filtering rate.}")
     print(r"\label{tab:trace_filtering}")
     print(r"\fontsize{8}{10}\selectfont")
-    print(r"\begin{tabular}{llrrrrr}")
+    print(r"\begin{tabular}{lrrrr}")
     print(r"\toprule")
-    print(r"\textbf{Trace} & \textbf{Variant} & \textbf{Raw requests} & "
-          r"\textbf{Retained} & \textbf{Coverage} & \textbf{Batches} & "
-          r"\textbf{Bottleneck by design} \\")
+    print(r"\textbf{Trace} & \textbf{Raw requests} & \textbf{Retained} & "
+          r"\textbf{Coverage} & \textbf{Batches} \\")
     print(r"\midrule")
 
-    for s in summaries:
-        variant_label = "Two-class (bottleneck)" if s["variant"] == "mixalgos" \
-                        else "Three-class (general)"
-        bottleneck = s["bottleneck_batches"]
+    for s in seen.values():
         print(
-            f"{s['trace']} & {variant_label} & "
+            f"{s['trace']} & "
             f"{s['raw_requests']} & "
             f"{s['retained_requests']} & "
             f"{s['coverage']:.2f}\\% & "
-            f"{s['generated_batches']} & "
-            f"{bottleneck} \\\\"
+            f"{s['generated_batches']} \\\\"
         )
 
     print(r"\bottomrule")
@@ -903,7 +908,7 @@ def gen_trace_detail_table(output_dir="./result/", tag=""):
 
     for panel_idx, (scenario_label, scenario_suffix) in enumerate(scenarios):
         panel_letter = chr(ord('a') + panel_idx)
-        print(f"\t\\multicolumn{{8}}{{l}}{{\\textbf{{({panel_letter}) {scenario_label}}}}} \\\\")
+        print(f"\t\\multicolumn{{8}}{{l}}{{\\makecell{{\\textbf{{({panel_letter}) {scenario_label}}}}}}} \\\\")
         print(r"\midrule")
 
         for trace_idx, (trace_label, trace_key) in enumerate(trace_names):

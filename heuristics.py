@@ -142,49 +142,6 @@ def MixPack(L):
     return PMs if gv.RETURN_PMS else npms
 
 
-def MixVM201Priority(L):
-    """
-    Priority-only variant of MixVM201Pro.
-
-    This heuristic isolates the effect of the ratio-balance priority rule used in MixVM201Pro
-    without the full-case shortcut that simply packs all remaining VMs when both classes
-    are below one third of the capacity.  It reuses residual capacity flexibly and
-    prioritizes the class with the relatively larger remaining demand, but it does not
-    include the fallback branch that packs both classes entirely as in MixVM201Pro.
-    The function returns either the PM list or the PM count depending on the global flag
-    gv.RETURN_PMS, consistent with other heuristics.
-    """
-    L = np.copy(L)
-    C, ZERO = gv.C, gv.ZERO
-    vm0, vm2 = L[0], L[2]
-    C0, C2 = CpuSize(vm0), CpuSize(vm2)
-    npms, PMs = 0, []
-    while C0 + C2 > 0:
-        if C0 <= 2 * C2:
-            # Prioritize packing memory-heavier VMs first.  Ensure the bound is non-negative.
-            cap = max(0, C2 - C / 3)
-            R, cpu_r = FindVMsWithBound(cap, 2, L)
-            # Compute CPU bound for L0 and clip at zero.
-            cpu0 = max(0, 2 * C - 4 * C2 + 4 * cpu_r)
-            Q0, Q2 = FillOnePm(cpu0, -1, L)
-        else:
-            # Prioritize packing CPU-heavier VMs first.  Ensure the bound is non-negative.
-            cap0 = max(0, (3 * C0 - 2 * C) / 3)
-            R, cpu_r = FindVMsWithBound(cap0, 0, L)
-            # Compute CPU bound for L2 and clip at zero.
-            cpu2 = max(0, C - C0 + cpu_r)
-            Q0, Q2 = FillOnePm(-1, cpu2, L)
-        vm0 -= Q0
-        vm2 -= Q2
-        if gv.RETURN_PMS:
-            PMs.append([Q0, ZERO, Q2])
-        else:
-            npms += 1
-        C0 -= CpuSize(Q0)
-        C2 -= CpuSize(Q2)
-    return PMs if gv.RETURN_PMS else npms
-
-
 def SafeMix(L):
     """
     SafeMix wrapper: select the best packing result among MixVM301, MixVM201Pro and MixPack.
@@ -227,18 +184,6 @@ def VMPack_SafeMix(L):
     details on the selection logic.
     """
     return VMPackPro(L, SafeMix)
-
-# Alias for running MixVM201Priority inside the full VMPack pipeline
-def VMPack_MixVM201Priority(L):
-    """
-    Full VMPack pipeline using MixVM201Priority at the bottleneck stage.
-
-    This helper wraps the general VMPackPro framework with the priority-only variant of
-    MixVM201Pro.  It preserves the same approximation guarantee as MixVM301 by letting
-    the front-end operate as usual and then applying MixVM201Priority to the residual
-    two-class instance.
-    """
-    return VMPackPro(L, MixVM201Priority)
 
 def VMPack(L):
     L = np.copy(L)

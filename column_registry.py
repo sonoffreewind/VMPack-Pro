@@ -55,8 +55,6 @@ COLUMN_REGISTRY = {
             {'name': 'MixVM201',      'prefix': 'MixVM201',      'cols': ['npms', 'time'], 'type': 'heuristic'},
             {'name': 'MixVM201Pro',   'prefix': 'MixVM201Pro',   'cols': ['npms', 'time'], 'type': 'heuristic'},
             {'name': 'MixPack',       'prefix': 'MixPack',       'cols': ['npms', 'time'], 'type': 'heuristic'},
-            # Priority-only variant of MixVM201Pro for ablation study
-            {'name': 'MixVM201Priority', 'prefix': 'MixVM201Priority', 'cols': ['npms', 'time'], 'type': 'heuristic'},
             {'name': 'BFD',           'prefix': 'BFD',           'cols': ['npms', 'time'], 'type': 'heuristic'},
             {'name': 'FFD',           'prefix': 'FFD',           'cols': ['npms', 'time'], 'type': 'heuristic'},
     {'name': 'VanillaMIP(mix)', 'prefix': 'MIP_Mix',
@@ -87,8 +85,6 @@ COLUMN_REGISTRY = {
     {'name': 'VMPack_MixPack',     'prefix': 'VMPack_MixPack',     'cols': ['npms', 'time'], 'type': 'heuristic'},
     # SafeMix full-pipeline heuristic wrapper
     {'name': 'VMPack_SafeMix',     'prefix': 'VMPack_SafeMix',     'cols': ['npms', 'time'], 'type': 'heuristic'},
-    # Priority-only variant of MixVM201Pro in the full pipeline
-    {'name': 'VMPack_MixVM201Priority', 'prefix': 'VMPack_MixVM201Priority', 'cols': ['npms', 'time'], 'type': 'heuristic'},
     {'name': 'BFD',               'prefix': 'BFD',               'cols': ['npms', 'time'], 'type': 'heuristic'},
     {'name': 'FFD',               'prefix': 'FFD',               'cols': ['npms', 'time'], 'type': 'heuristic'},
     # Column‑generation pattern benchmark (CG‑Benchmark) and its Mix initialization

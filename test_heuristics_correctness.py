@@ -9,7 +9,7 @@ the original VM demand for both instance families:
 
 The test includes all proposed heuristics, their VMPack variants, and two
 engineering baselines.  For mixalgos we test NoMixPack, MixVM301, MixVM201,
-MixVM201Pro, MixVM201Priority, MixPack, SafeMix and the corresponding
+MixVM201Pro, MixPack, SafeMix and the corresponding
 VMPack_* wrappers; for improvevmpack we test the VMPack variants only (the
 stand‑alone two‑class heuristics do not handle L1 VMs and are skipped).
 
@@ -39,9 +39,9 @@ import globalvars as gv
 from data import GenExamples, DataTypes
 from basic import ValidatePMs
 from heuristics import (
-    NoMixPack, MixVM301, MixVM201, MixVM201Pro, MixVM201Priority, MixPack, SafeMix,
+    NoMixPack, MixVM301, MixVM201, MixVM201Pro, MixPack, SafeMix,
     VMPack_NoMixPack, VMPack_MixVM301, VMPack_MixVM201,
-    VMPack_MixVM201Pro, VMPack_MixVM201Priority, VMPack_MixPack, VMPack_SafeMix,
+    VMPack_MixVM201Pro, VMPack_MixPack, VMPack_SafeMix,
     BFD, FFD, ExpandPMsToOriginal,
 )
 
@@ -61,7 +61,6 @@ INDEPENDENT = [
     ("MixVM301",        MixVM301),
     ("MixVM201",        MixVM201),
     ("MixVM201Pro",     MixVM201Pro),
-    ("MixVM201Priority", MixVM201Priority),
     ("MixPack",         MixPack),
     ("SafeMix",         SafeMix),
 ]
@@ -72,7 +71,6 @@ VMPACK = [
     ("VMPack_MixVM301",       VMPack_MixVM301),
     ("VMPack_MixVM201",       VMPack_MixVM201),
     ("VMPack_MixVM201Pro",    VMPack_MixVM201Pro),
-    ("VMPack_MixVM201Priority", VMPack_MixVM201Priority),
     ("VMPack_MixPack",        VMPack_MixPack),
     ("VMPack_SafeMix",        VMPack_SafeMix),
 ]

@@ -461,25 +461,25 @@ def plot_fig7_warm_start_effect(output_dir, tags):
         scale_labels.append(scale)
 
         cols = [
-            to_float(r.get("PB_n_cols"))
+            to_float(r.get("CG_n_cols"))
             for r in rows_1s
-            if to_float(r.get("PB_n_cols")) is not None
+            if to_float(r.get("CG_n_cols")) is not None
         ]
         mix_cols = [
-            to_float(r.get("PB_Mix_n_cols"))
+            to_float(r.get("CG_Mix_n_cols"))
             for r in rows_1s
-            if to_float(r.get("PB_Mix_n_cols")) is not None
+            if to_float(r.get("CG_Mix_n_cols")) is not None
         ]
 
         times = [
-            to_float(r.get("PB_time")) * 1000
+            to_float(r.get("CG_time")) * 1000
             for r in rows_1s
-            if to_float(r.get("PB_time")) is not None
+            if to_float(r.get("CG_time")) is not None
         ]
         mix_times = [
-            to_float(r.get("PB_Mix_time")) * 1000
+            to_float(r.get("CG_Mix_time")) * 1000
             for r in rows_1s
-            if to_float(r.get("PB_Mix_time")) is not None
+            if to_float(r.get("CG_Mix_time")) is not None
         ]
 
         pb_cols.append(np.mean(cols) if cols else np.nan)
