@@ -49,13 +49,13 @@ class _CheckpointCallback:
         record = {'time': ct, 'real_time': self._get_cb_time()}
         try:
             obj_val = model.cbGet(gp.GRB.Callback.MIP_OBJBST)
-            if np.isfinite(obj_val):
+            if np.isfinite(obj_val) and abs(obj_val) < GRB.INFINITY:
                 record['ub'] = int(np.ceil(obj_val - EPS))
         except (gp.GurobiError, AttributeError, OverflowError):
             pass
         try:
             obj_bound = model.cbGet(gp.GRB.Callback.MIP_OBJBND)
-            if np.isfinite(obj_bound):
+            if np.isfinite(obj_bound) and abs(obj_bound) < GRB.INFINITY:
                 record['bestbound'] = float(obj_bound)
                 record['lb'] = int(np.ceil(obj_bound - EPS))
         except (gp.GurobiError, AttributeError, OverflowError):
@@ -86,7 +86,7 @@ class _CheckpointCallback:
 
 
 def VanillaMIP(vm_demands: np.ndarray, timelimit: int = 1500, verbose: bool = True,
-                ub_heuristic_fn=None, checkpoint_times=None):
+                ub_heuristic_fn=None, checkpoint_times=None, total_time_limit=False):
     """
     Solve VM packing using a standard assignment-based MIP formulation.
     This is the naive approach that suffers from symmetry explosion.
@@ -154,6 +154,10 @@ def VanillaMIP(vm_demands: np.ndarray, timelimit: int = 1500, verbose: bool = Tr
             else:
                 return (0, [], {'lb': 0, 'ub': 0, 'gap': 0, 'status': 'Optimal'})
 
+        resource_lb = int(np.ceil(max(
+            sum(CPU[t] * vm_demands[s][t] for s in range(S) for t in range(T)) / C,
+            sum((2 ** s) * CPU[t] * vm_demands[s][t] for s in range(S) for t in range(T)) / M) - EPS))
+
         # Build model
         model = gp.Model("VanillaMIP_2DVBP")
         model.Params.OutputFlag = 1 if verbose else 0
@@ -219,6 +223,9 @@ def VanillaMIP(vm_demands: np.ndarray, timelimit: int = 1500, verbose: bool = Tr
 
         model.update()
 
+        if total_time_limit:
+            model.Params.TimeLimit = max(0.0, timelimit - (time.time() - t0))
+
         # Register the callback on the model for checkpoint recording
         if checkpoint_times is not None and len(checkpoint_times) > 0:
             model.Params.LazyConstraints = 1  # required for callbacks
@@ -241,21 +248,23 @@ def VanillaMIP(vm_demands: np.ndarray, timelimit: int = 1500, verbose: bool = Tr
         status = status_map.get(model.status, f'Unknown({model.status})')
 
         gap_info = {
-            'lb': None, 'ub': None, 'gap': None,
-            'status': status, 'time': elapsed,
+            'lb': resource_lb,
+            'ub': ub_pms, 'gap': None,
+            'status': status, 'raw_status': status, 'time': elapsed,
+            'budget_overrun': total_time_limit and elapsed > timelimit,
             'bestbound': None, 'nodecount': None,
         }
 
         # Record incumbent upper bound, if any.
         if model.SolCount > 0:
-            gap_info['ub'] = int(np.ceil(model.ObjVal - EPS))
+            gap_info['ub'] = min(ub_pms, int(np.ceil(model.ObjVal - EPS)))
 
         # Record best bound and node count whenever available.
         try:
             obj_bound = model.ObjBound
-            if np.isfinite(obj_bound):
+            if np.isfinite(obj_bound) and abs(obj_bound) < GRB.INFINITY:
                 gap_info['bestbound'] = float(obj_bound)
-                gap_info['lb'] = int(np.ceil(obj_bound - EPS))
+                gap_info['lb'] = max(gap_info['lb'], int(np.ceil(obj_bound - EPS)))
         except (gp.GurobiError, AttributeError, OverflowError):
             pass
 
@@ -310,13 +319,17 @@ def VanillaMIP(vm_demands: np.ndarray, timelimit: int = 1500, verbose: bool = Tr
             return (result_npms, [], gap_info)
 
     except gp.GurobiError as e:
-        gap_info = {'lb': None, 'ub': None, 'gap': None,
-                    'status': f'GurobiError: {e}', 'time': 0,
+        fallback_ub = locals().get('ub_pms')
+        fallback_lb = locals().get('resource_lb')
+        gap_info = {'lb': fallback_lb, 'ub': fallback_ub,
+                    'gap': fallback_ub - fallback_lb if fallback_ub is not None and fallback_lb is not None else None,
+                    'status': 'Error', 'raw_status': f'GurobiError: {e}', 'time': time.time() - t0,
+                    'budget_overrun': total_time_limit and time.time() - t0 > timelimit,
                     'bestbound': None, 'nodecount': None}
         if gv.RETURN_PMS:
             return ([], [], gap_info)
         else:
-            return (-1, [], gap_info)
+            return (fallback_ub if fallback_ub is not None else -1, [], gap_info)
 
     finally:
         if not verbose:

@@ -196,12 +196,17 @@ def PriceBranch(vm_demands:np.array, ub_heuristic_fn=None, timelimit:int = 100, 
         else:
             certified_lb = resource_lb
 
+        m.update()
         # Branch and Bound (only if time remains)
         ip_solved = False
         if remaining_time() > 1e-3:
             m.Params.TimeLimit = remaining_time()
-            for v in m.getVars():
-                v.Start = max(0.0, round(v.X))
+            initial_counts = {}
+            for pm in heuristic_pms:
+                key = _pattern_key(pm)
+                initial_counts[key] = initial_counts.get(key, 0) + 1
+            for pattern, v in zip(patterns, m.getVars()):
+                v.Start = initial_counts.get(_pattern_key(pattern), 0)
                 v.vtype = GRB.INTEGER
             m.optimize()
             ip_solved = True
@@ -213,8 +218,10 @@ def PriceBranch(vm_demands:np.array, ub_heuristic_fn=None, timelimit:int = 100, 
             'gap': None,
             'n_cols': len(patterns),
             'cg_certified': cg_certified_complete,
+            'raw_status': f'RestrictedIP({m.status})' if ip_solved else f'CG({m.status})',
+            'budget_overrun': time.time() - start > timelimit,
         }
-        if ip_solved and m.SolCount > 0:
+        if ip_solved and m.SolCount > 0 and m.ObjVal < heuristic_ub + EPS:
             best_obj = int(np.ceil(m.ObjVal - EPS))
             gap_info['ub'] = best_obj
             gap_info['gap'] = best_obj - certified_lb

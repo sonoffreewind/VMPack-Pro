@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """
 run.py — Master experiment orchestrator for the CAOR paper
-"Improving VMPack: Heuristic Mixed Packing Algorithms for
- Two Specific Virtual Machine Classes."
+"Safe Mixed-Packing Heuristics for a Structured 2-DVBP Bottleneck
+ in Virtual Machine Allocation."
 
 Reproduces all experimental results from Section 5 (Computational Experiments).
 Runs every step in paper order. Use --steps to select specific steps.
@@ -38,8 +38,8 @@ from utils import SCALES, UP_SWEEP, DEFAULT_N_INST, DEFAULT_SEED, DEFAULT_T
 # ── Project paths ─────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent
 
-# Use conda py312 environment (has all dependencies)
-PYTHON = r"E:\ProgramData\Miniconda3\envs\py312\python.exe"
+# Keep subprocesses in the Python environment used to launch this command.
+PYTHON = sys.executable
 RESULT_DIR = PROJECT_ROOT / "result"
 DATA_DIR = PROJECT_ROOT / "data"
 LOG_DIR = RESULT_DIR / "log"   # per-step subprocess logs (when --quiet)
@@ -489,7 +489,30 @@ def step_export_unified(args):
     return results
 
 
+def step_time_budget(args):
+    results = []
+    for case in HEURISTIC_CONFIGS:
+        cmd = [PYTHON, 'run_solvers_only.py', '--fun_case', case,
+               '--time_limits', args.time_limits, '--scales', args.scales,
+               '--n_inst', str(args.n_inst), '--seed', str(args.seed),
+               '--output_dir', str(RESULT_DIR), '--data_dir', str(DATA_DIR)]
+        if args.max_instances is not None:
+            cmd += ['--max_instances', str(args.max_instances)]
+        if args.quiet:
+            cmd.append('--quiet')
+        elapsed = run_step(cmd, f'Independent time budgets ({case})', args, f'time_budget_{case}')
+        results.append(StepResult(f'time_budget_{case}', True, elapsed))
+        output = RESULT_DIR / 'time_budget' / case
+        common = ['--time_limits', args.time_limits, '--scales', args.scales, '--output_dir', str(output)]
+        run_step([PYTHON, 'gen_gap_summary.py'] + common + ['--save_csv', '--tex_dir', str(output / 'tables')],
+                 f'Time budget tables ({case})', args, f'time_budget_tables_{case}')
+        run_step([PYTHON, 'plot_results.py', '--figure', 'time_budget'] + common,
+                 f'Time budget figures ({case})', args, f'time_budget_figures_{case}')
+    return results
+
+
 STEP_REGISTRY = {
+    "time_budget":       step_time_budget,
     "generate_data":     step_generate_data,
     "process_traces":    step_process_traces,
     "heuristic":         step_heuristic,
@@ -500,7 +523,7 @@ STEP_REGISTRY = {
     "gen_figures":       step_gen_figures,
 }
 
-GUROBI_STEPS = {"scale_maxtime"}
+GUROBI_STEPS = {"scale_maxtime", "time_budget"}
 
 
 def main():
@@ -540,11 +563,14 @@ Examples:
                              "trace_experiments (mixalgos and/or improvevmpack). "
                              "mixalgos writes the default CSV names; improvevmpack "
                              "writes scenario-suffixed CSVs.")
+    parser.add_argument("--time_limits", default="10,60,300")
+    parser.add_argument("--scales", default=",".join(SCALES))
+    parser.add_argument("--max_instances", type=int, default=None)
     args = parser.parse_args()
 
     # Resolve steps
     if args.steps == "all":
-        steps = list(STEP_REGISTRY.keys())
+        steps = [s for s in STEP_REGISTRY if s != "time_budget"]
     else:
         steps = [s.strip() for s in args.steps.split(",")]
 

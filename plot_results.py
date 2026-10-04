@@ -601,6 +601,40 @@ def plot_fig7_warm_start_effect(output_dir, tags):
     save_figure(fig_dir / "time_limit_warm_start")
 
 
+def plot_time_budget_comparison(output_dir, time_limits, scales):
+    """Independent budget endpoints, with the same instances at each budget."""
+    from gen_gap_summary import summarize_time_budgets, SOLVERS
+    summaries = summarize_time_budgets(output_dir, time_limits, scales)
+    setup_matplotlib()
+    fig, axes = plt.subplots(2, len(scales), figsize=(4 * len(scales), 6), squeeze=False)
+    for col, scale in enumerate(scales):
+        for solver in SOLVERS:
+            rows = [r for r in summaries if r['scale'] == scale and r['solver'] == solver['name']]
+            x = [r['budget_s'] for r in rows]
+            # Use complete feasible sets; do not compare means from different subsets.
+            quality = [float(r['avg_ub']) / float(r['heuristic_npms'])
+                       if r['n_feasible'] == r['n'] and r['n_error'] == 0 and r['avg_ub'] != '-'
+                       and r['heuristic_npms'] != '-' and float(r['heuristic_npms']) > 0 else np.nan for r in rows]
+            axes[0, col].plot(x, quality, marker='o', label=solver['name'])
+            axes[1, col].plot(x, [r['certified_percent'] for r in rows], marker='o', label=solver['name'])
+        axes[0, col].axhline(1, color='gray', linestyle='--', label='Heuristic reference')
+        axes[0, col].set_title(scale)
+        axes[0, col].set_ylabel('Returned mean PMs / heuristic mean PMs')
+        axes[1, col].set_ylabel('Certified within budget (%)')
+        axes[1, col].set_ylim(-2, 102)
+        labels = [f'{b:g}' + ('*' if any(r['scale'] == scale and r['budget_s'] == b
+                                       and r['n_over_budget'] > 0 for r in summaries) else '')
+                  for b in time_limits]
+        for ax in axes[:, col]:
+            ax.set_xscale('log')
+            ax.set_xticks(time_limits, labels)
+            ax.minorticks_off()
+            ax.set_xlabel('Requested independent budget (s)\n* includes runtime overruns')
+            ax.grid(alpha=.25)
+    axes[0, 0].legend(fontsize=8)
+    save_figure(ensure_fig_dir(output_dir) / 'time_budget_comparison')
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate Figure 4/5/6/7 from experiment CSV files."
@@ -609,7 +643,7 @@ def main():
         "--figure",
         type=str,
         default="all",
-        choices=["fig4", "fig5", "fig6", "fig7", "all"],
+        choices=["fig4", "fig5", "fig6", "fig7", "time_budget", "all"],
         help="Which figure to generate.",
     )
     parser.add_argument(
@@ -632,7 +666,17 @@ def main():
         help="Heuristic experiment config for Figure 5 (Figure 4 always uses improvevmpack).",
     )
 
+    parser.add_argument('--time_limits', default='10,60,300',
+                        help='Independent budgets for --figure time_budget.')
+    parser.add_argument('--scales', default='M1,M2,L1,L2')
     args = parser.parse_args()
+    if args.figure == 'time_budget':
+        budgets = sorted(set(float(x) for x in args.time_limits.split(',')))
+        scales = [s.strip() for s in args.scales.split(',') if s.strip()]
+        if not budgets or any(not np.isfinite(x) or x <= 0 for x in budgets) or not scales:
+            parser.error('Provide positive finite budgets and nonempty scales')
+        plot_time_budget_comparison(args.output_dir, budgets, scales)
+        return
 
     if args.figure in ("fig4", "all"):
         plot_fig4_quality_trend(args.output_dir, args.tag, args.config)

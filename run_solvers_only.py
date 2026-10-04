@@ -51,15 +51,15 @@ Usage examples:
     python run_solvers_only.py --maxtime 10                        # Default checkpoints: 1,5,10
     python run_solvers_only.py --maxtime 10 --checkpoint_times 1,5,10
 """
-import argparse, csv, json, os, platform, time
+import argparse, csv, hashlib, json, os, platform, time
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 
 import globalvars as gv
-from data import LoadExamples, DataTypes, GetFilePath
-from heuristics import VMPack_MixVM201Pro, VMPack_NoMixPack
+from data import LoadExamples, DataTypes, GetFilePath, GenExamples, SaveExamples
+from heuristics import VMPack_MixVM201Pro, VMPack_NoMixPack, MixVM201Pro
 from pricebranch import PriceBranch
 from vanilla_mip import VanillaMIP
 from utils import to_float
@@ -124,20 +124,23 @@ def run_pricebranch(vm_demands, timelimit, ub_fn):
     ub = gap_info.get('ub')
     gap = gap_info.get('gap')
     n_cols = gap_info.get('n_cols')
-    status = ('Optimal' if gap_info.get('cg_certified') and gap == 0
+    status = ('Optimal' if gap == 0
               else 'Feasible' if ub and ub > 0 else 'NoSolution')
     return {
         'npms': npms, 'lb': lb, 'ub': ub, 'gap': gap,
         'time': elapsed, 'status': status, 'n_cols': n_cols,
+        'raw_status': gap_info.get('raw_status'),
+        'cg_completed': gap_info.get('cg_certified', False),
+        'budget_overrun': gap_info.get('budget_overrun', False),
     }
 
 
-def run_vanilla_mip(vm_demands, timelimit, ub_fn, checkpoint_times=None):
+def run_vanilla_mip(vm_demands, timelimit, ub_fn, checkpoint_times=None, total_time_limit=False):
     """Run VanillaMIP with optional checkpoint callback. Returns (result_dict, checkpoints_dict)."""
     t0 = time.time()
     result, _, gap_info = VanillaMIP(
         vm_demands, timelimit=timelimit, verbose=False,
-        ub_heuristic_fn=ub_fn, checkpoint_times=checkpoint_times)
+        ub_heuristic_fn=ub_fn, checkpoint_times=checkpoint_times, total_time_limit=total_time_limit)
     elapsed = time.time() - t0
     npms = result if isinstance(result, (int, float, np.integer)) else -1
     lb = gap_info.get('lb')
@@ -146,12 +149,16 @@ def run_vanilla_mip(vm_demands, timelimit, ub_fn, checkpoint_times=None):
     status = gap_info.get('status', 'Unknown')
     nodes = gap_info.get('nodecount')
     bb = gap_info.get('bestbound')
-    if status == 'TimeLimit':
+    raw_status = gap_info.get('raw_status', status)
+    if status != 'Error' and gap == 0 and ub is not None:
+        status = 'Optimal'
+    elif status in ('TimeLimit', 'NodeLimit'):
         status = 'Feasible' if (ub and ub > 0) else 'NoSolution'
     result_dict = {
         'npms': npms, 'lb': lb, 'ub': ub, 'gap': gap,
         'time': elapsed, 'status': status, 'nodecount': nodes,
-        'bestbound': bb,
+        'bestbound': bb, 'raw_status': raw_status,
+        'budget_overrun': gap_info.get('budget_overrun', False),
     }
     checkpoints = gap_info.get('checkpoints', {})
     return result_dict, checkpoints
@@ -264,7 +271,7 @@ def build_result_row(i, L, scale_name, cfg, args,
 
     # ----- VanillaMIP (NoMix) — runs once with checkpoint callback -----
     mip, mip_cp = run_vanilla_mip(
-        vm_demands, args.maxtime, None, checkpoint_times=checkpoint_times)
+        vm_demands, args.maxtime, None, checkpoint_times=checkpoint_times, total_time_limit=bool(getattr(args, 'time_limits', None)))
     row.update({'mip_npms': mip['npms'], 'mip_lb': mip['lb'], 'mip_ub': mip['ub'],
                 'mip_gap': mip['gap'], 'mip_time': mip['time'],
                 'mip_status': mip['status'], 'mip_nodecount': mip['nodecount'],
@@ -285,7 +292,7 @@ def build_result_row(i, L, scale_name, cfg, args,
 
     # ----- VanillaMIP+Mix — runs once with checkpoint callback -----
     mip_mix, mip_mix_cp = run_vanilla_mip(
-        vm_demands, args.maxtime, VMPack_MixVM201Pro, checkpoint_times=checkpoint_times)
+        vm_demands, args.maxtime, VMPack_MixVM201Pro, checkpoint_times=checkpoint_times, total_time_limit=bool(getattr(args, 'time_limits', None)))
     row.update({'mip_mix_npms': mip_mix['npms'], 'mip_mix_lb': mip_mix['lb'],
                 'mip_mix_ub': mip_mix['ub'], 'mip_mix_gap': mip_mix['gap'],
                 'mip_mix_time': mip_mix['time'], 'mip_mix_status': mip_mix['status'],
@@ -304,6 +311,14 @@ def build_result_row(i, L, scale_name, cfg, args,
         row[f'mip_mix_{suffix}_nodecount'] = cp_data.get('nodecount')
         row[f'mip_mix_{suffix}_bestbound'] = cp_data.get('bestbound')
 
+    if getattr(args, 'time_limits', None):
+        for prefix, result in [('pb', pb), ('pb_mix', pb_mix), ('mip', mip), ('mip_mix', mip_mix)]:
+            for field in ('raw_status', 'budget_overrun'):
+                row[f'{prefix}_{field}'] = result.get(field)
+            row[f'{prefix}_certified'] = result.get('status') != 'Error' and result.get('gap') == 0 and result.get('ub') is not None
+        row['pb_cg_completed'] = pb['cg_completed']
+        row['pb_mix_cg_completed'] = pb_mix['cg_completed']
+
     # Compute differences
     h_val = row.get('heuristic_npms', '*')
     pb_val = row.get('pb_npms', '*')
@@ -314,6 +329,52 @@ def build_result_row(i, L, scale_name, cfg, args,
                           and isinstance(mip_val, (int, float)) and mip_val > 0 else '*')
 
     return row
+
+
+def run_time_budgets(args):
+    budgets = sorted(set(float(x) for x in args.time_limits.split(',')))
+    scales = [x.strip() for x in args.scales.split(',')]
+    if not budgets or any(not np.isfinite(b) or b <= 0 for b in budgets):
+        raise ValueError('time_limits must be positive finite seconds')
+    if args.n_inst <= 0 or (args.max_instances is not None and args.max_instances <= 0):
+        raise ValueError('instance counts must be positive')
+    if any(x not in EXPERIMENT_CONFIGS for x in scales):
+        raise ValueError('Unknown scale')
+    output = Path(args.output_dir) / 'time_budget' / args.fun_case / 'scale'
+    output.mkdir(parents=True, exist_ok=True)
+    for scale in scales:
+        cfg = EXPERIMENT_CONFIGS[scale]
+        gv.InitialGlobalVars(cfg['T'], cfg['UP'])
+        np.random.seed(args.seed)
+        filepath = GetFilePath(args.data_dir, args.n_inst, DataTypes.RANDOM, args.fun_case)
+        generated = not Path(filepath).exists()
+        Ls = GenExamples(args.n_inst, DataTypes.RANDOM, args.fun_case) if generated else LoadExamples(filepath)
+        if len(Ls) != args.n_inst or any(np.asarray(L).shape != (3, cfg['T']) or
+                not np.all(np.isfinite(L)) or np.any(np.asarray(L) < 0) or
+                not np.all(np.asarray(L) == np.floor(L)) for L in Ls):
+            raise ValueError(f'Invalid instance data: {filepath}')
+        if generated:
+            SaveExamples(args.data_dir, Ls, DataTypes.RANDOM, args.fun_case)
+        Ls = Ls[:args.max_instances] if args.max_instances else Ls
+        heuristics = []
+        for L in Ls:
+            t0 = time.time()
+            result = (MixVM201Pro if args.fun_case == 'mixalgos' else VMPack_MixVM201Pro)(np.array(L, copy=True))
+            heuristics.append((float(result[0] if isinstance(result, tuple) else result), time.time() - t0))
+        for budget in budgets:
+            args.maxtime = budget
+            rows = []
+            path = output / f'{scale}_tl{budget:g}.csv'
+            for i, (L, (h, ht)) in enumerate(zip(Ls, heuristics)):
+                row = build_result_row(i, L, scale, cfg, args, h, ht, [], args.fun_case)
+                row.update(data_file=str(Path(filepath).resolve()), data_generated=generated,
+                           instance_hash=hashlib.sha256(np.asarray(L, dtype=np.int64).tobytes()).hexdigest())
+                rows.append(row)
+                with path.open('w', newline='', encoding='utf-8') as f:
+                    writer = csv.DictWriter(f, fieldnames=list(row))
+                    writer.writeheader()
+                    writer.writerows(rows)
+                print(f'{args.fun_case} {scale} {budget:g}s: {i + 1}/{len(Ls)}', flush=True)
 
 
 def main():
@@ -333,7 +394,13 @@ def main():
     parser.add_argument('--data_dir', type=str, default='./data/')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--quiet', action='store_true')
+    parser.add_argument('--time_limits', default=None, help='Independent end-to-end budgets, e.g. 10,60,300')
+    parser.add_argument('--scales', default=','.join(EXPERIMENT_CONFIGS))
+    parser.add_argument('--max_instances', type=int, default=None)
     args = parser.parse_args()
+    if args.time_limits is not None:
+        run_time_budgets(args)
+        return
 
     checkpoint_times = sorted(set(
         int(x) for x in args.checkpoint_times.split(',') if x.strip()

@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg )](https://opensource.org/licenses/MIT )
 
-> This repository contains the source code and experimental data for the manuscript titled *"Safe Mixed-Packing Heuristics for a Structured 2-DVBP Bottleneck in Virtual Machine Allocation."* 
+> This repository contains the source code and scripts for generating experimental data for the manuscript titled *"Safe Mixed-Packing Heuristics for a Structured 2-DVBP Bottleneck in Virtual Machine Allocation."*
 
 ## Description
 
@@ -112,11 +112,12 @@ The code is written in Python and requires the following libraries:
 - Python 3.x
 - `numpy`
 - `sortedcontainers` (used in `BFD` for efficient data handling)
-- `gurobipy` (required for `pricebranch.py`, `vanilla_mip.py`)
+- `gurobipy` (required for `pricebranch.py`, `vanilla_mip.py`; a Gurobi license is needed)
+- `matplotlib`, `pandas`, `scipy` (figures, trace preprocessing and paired statistics)
 
 You can install the required libraries using pip:
 ```bash
-pip install numpy sortedcontainers gurobipy
+pip install numpy sortedcontainers gurobipy matplotlib pandas scipy
 ```
 
 ## Usage
@@ -184,7 +185,7 @@ After downloading, the directory should contain:
 ```
 raw_data/
 ├── trace_data_vmtable_vmtable.csv   # ~784 MB, 2,695,548 rows, 11 columns, no header
-└── Huawei-East-1.csv                # ~5.3 MB, 125,430 VM create/delete events
+└── Huawei-East-1.csv                # ~5.3 MB, 241,743 VM create/delete events, including 125,430 creation requests
 ```
 
 Two scenarios must be run for each trace: `mixalgos` (two-class bottleneck,
@@ -209,11 +210,11 @@ python process_microsoft_vmtable.py --input raw_data/trace_data_vmtable_vmtable.
     --n_instances 100 --shuffle --seed 42 --scenario improvevmpack
 ```
 
-**Trace preprocessing protocol** (matches Section 5.2.2 of the paper):
-- **Huawei-East-1** (125,430 VM create/delete events): events processed in
+**Trace preprocessing protocol** (see main Section 5.1 and Supplementary Material B, Section 1.2):
+- **Huawei-East-1** (241,743 VM create/delete events, including 125,430 creation requests): events processed in
   chronological order; an active-set snapshot is taken every 2,000 events;
   snapshots with fewer than 50 active VMs are discarded; yields 121 snapshots.
-  Each VM is mapped to type $(s,t)$ if its CPU is a power of two $2^t$
+  Each VM is mapped to type $(t,s)$ if its CPU is a power of two $2^t$
   ($t \in [0,6]$) and memory-to-CPU ratio is in $\{1,2,4\}$ ($s \in \{0,1,2\}$).
 - **Microsoft 2017 vmtable** (2,695,548 VM records, 11 columns, no header):
   VMs filtered by the dyadic power-of-two rule on `vm_virtual_core_count_bucket`
@@ -307,3 +308,57 @@ If you use this work or the provided code in your research, please cite our manu
   year      = {2026}
 }
 ```
+
+
+### Independent time-budget comparison
+
+Run the complete independent-budget experiment explicitly (it is not included in `--steps all`). The command uses 100 instances per scale in each of the two settings, giving 9,600 solver runs:
+
+```powershell
+python run.py --steps time_budget --time_limits 10,60,300 --scales M1,M2,L1,L2 --n_inst 100 --seed 42
+```
+
+`--n_inst` identifies the original saved/generated instance set; `--max_instances`
+selects its first N instances. Each scale/scenario is generated once with the
+specified seed and saved using the existing data format. All budgets use those
+same instances. Results are written to `result/time_budget/<scenario>/scale/`;
+existing tables and plotting programs also generate the corresponding summaries.
+For a subset, add `--max_instances 10`; this is not the full paper experiment.
+A short smoke run can use `--scales S1 --n_inst 2 --max_instances 1 --time_limits 1`.
+
+Each solver is restarted for each budget. Budgets include its heuristic
+initialization and model construction; the remaining time is passed to Gurobi.
+Actual elapsed time and budget overruns are recorded, since model construction
+cannot be interrupted by Gurobi's time limit. This experiment does not reuse the
+legacy `scale_maxtime` callback checkpoints (in particular, CG checkpoint reuse
+is not evidence of performance at independent time budgets).
+
+The four configurations compare NoMixPack initialization with MixVM201Pro
+initialization; the baseline is not a cold start. MIP's candidate PM count, and
+therefore model size, depends on the initialization upper bound. CG solves an
+integer restricted master after column generation and is not full branch-and-price.
+Only a valid global lower bound meeting the feasible upper bound certifies an
+optimum; a restricted-master optimum alone does not. The two-class heuristic
+reference uses MixVM201Pro directly, while the three-class reference uses its
+VMPack pipeline.
+
+The additional table reports final returned bounds, actual elapsed time,
+overrun and error counts. Its certification rate conservatively counts only
+bound closures returned within the requested total budget. Plot ticks marked
+with `*` include runtime overruns; the quality panel shows returned solutions.
+
+Synthetic inputs in `data/` and outputs in `result/` are generated locally;
+raw public traces in `raw_data/` must be downloaded as described above.
+These directories are not committed to this repository. Fresh runs reproduce
+the protocol; elapsed times and time-limited solver outcomes can vary with
+hardware, solver version and operating-system scheduling.
+
+Run the focused checks without solving the full experiment:
+
+```bash
+python -m unittest test_solver_experiments -v
+python test_heuristics_correctness.py
+```
+
+The runner launches subprocesses with the same Python interpreter used for
+`python run.py`; activate the environment containing the dependencies first.

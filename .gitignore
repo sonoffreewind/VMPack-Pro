@@ -1,0 +1,6 @@
+# Generated inputs, downloaded traces and experiment outputs remain local.
+/data/
+/raw_data/
+/result/
+__pycache__/
+*.py[cod]

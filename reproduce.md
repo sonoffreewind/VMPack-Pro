@@ -8,12 +8,26 @@ that generates it, so that the reported results can be reproduced end to end.
 - **Python**: 3.12 (conda env `py312` at `E:\ProgramData\Miniconda3\envs\py312`)
 - **Gurobi**: 13.0.1 (license required; `gurobipy`)
 - **Other deps**: `numpy`, `sortedcontainers`, `matplotlib`, `pandas`
-- Install: `pip install -r requirements.txt` (and `gurobipy` separately)
+- Install: `pip install numpy sortedcontainers matplotlib pandas scipy gurobipy`
 
 All commands are run from the project root directory. The master orchestrator
-is `run.py`; it uses the `py312` interpreter internally (hardcoded in `run.py`).
+is `run.py`; it uses the same Python interpreter that launches `run.py`.
 
-## One-command full reproduction
+## Independent longer-budget experiment
+
+For the additional 10-, 60-, and 300-second comparison in main Section 5.5 and
+Supplementary Material B, Section 1.7, run:
+
+```bash
+python run.py --steps time_budget --time_limits 10,60,300 --scales M1,M2,L1,L2 --n_inst 100 --seed 42
+```
+
+This runs both settings on 100 instances per scale. Saved inputs are generated
+when absent; all budgets use the same inputs. The original checkpoint workflow
+below does not include this experiment. The table and figure mappings below
+retain the original export names and manuscript numbering.
+
+## Original checkpoint workflow
 
 ```bash
 python run.py --steps heuristic,scale_maxtime,trace_experiments,export_unified,gen_tables,gen_figures --maxtime 10 --checkpoint_times 1,5,10 --force --quiet

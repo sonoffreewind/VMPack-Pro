@@ -294,6 +294,113 @@ def save_summary_csv(output_dir, tag, scales):
     print(f"\n[INFO] Gap summary CSV saved to: {out_path}")
 
 
+def summarize_time_budgets(output_dir, time_limits, scales):
+    """Read independent runs strictly: no fallback to another budget's CSV."""
+    from collections import defaultdict
+    grouped = defaultdict(list)
+    expected = {}
+    for scale in scales:
+        for budget in time_limits:
+            path = Path(output_dir) / 'scale' / f'{scale}_tl{budget:g}.csv'
+            rows = load_csv(path)
+            ids = [r['instance'] for r in rows]
+            if not rows or len(set(ids)) != len(ids):
+                raise ValueError(f'Empty or duplicate instance rows: {path}')
+            identity = {(r['instance'], r.get('instance_hash', r.get('data_file', '')),
+                         r.get('funcase'), r.get('seed')) for r in rows}
+            if scale in expected and expected[scale] != identity:
+                raise ValueError(f'Instance sets differ across budgets: {scale}')
+            expected[scale] = identity
+            if any(to_float(r.get('timelimit')) != budget for r in rows):
+                raise ValueError(f'Budget does not match filename: {path}')
+            grouped[scale, budget] = rows
+
+    summaries = []
+    for (scale, budget), rows in grouped.items():
+        for solver in SOLVERS:
+            prefix = solver['ub'][:-3]
+            valid = [r for r in rows if _budget_bound(r.get(solver['ub']), positive=True)
+                     is not None]
+            ubs = [to_float(r[solver['ub']]) for r in valid]
+            lbs, gaps = [], []
+            certified = 0
+            for r in rows:
+                ub = _budget_bound(r.get(solver['ub']), positive=True)
+                lb = _budget_bound(r.get(solver['lb']))
+                if lb is not None:
+                    lbs.append(lb)
+                if ub is not None and lb is not None:
+                    if lb > ub + 1e-6:
+                        raise ValueError(f'LB exceeds UB: {scale}, {budget}, {prefix}')
+                    gaps.append(100 * (ub - lb) / ub)
+                    # Do not credit an optimum returned after the requested budget.
+                    if (abs(ub - lb) <= 1e-6 and r.get(solver['status']) != 'Error'
+                            and to_float(r.get(solver['time']), float('inf')) <= budget):
+                        certified += 1
+            # Compare initializations on the same instances, never different feasible subsets.
+            base = prefix.removesuffix('_mix')
+            paired = [(to_float(r.get(f'{base}_ub')), to_float(r.get(f'{base}_mix_ub')))
+                      for r in rows if _budget_bound(r.get(f'{base}_ub'), True) is not None
+                      and _budget_bound(r.get(f'{base}_mix_ub'), True) is not None]
+            times = [to_float(r.get(solver['time'])) for r in rows]
+            summaries.append({
+                'scale': scale, 'budget_s': budget, 'solver': solver['name'],
+                'n': len(rows), 'n_feasible': len(valid), 'n_certified': certified,
+                'certified_percent': 100 * certified / len(rows),
+                'n_gap': len(gaps), 'avg_ub': mean_or_dash(ubs), 'avg_lb': mean_or_dash(lbs),
+                'avg_rel_gap_percent': mean_or_dash(gaps), 'avg_time_ms': mean_or_dash(
+                    [t * 1000 for t in times if t is not None]),
+                'n_over_budget': sum(t is not None and t > budget for t in times),
+                'n_error': sum(r.get(solver['status']) == 'Error' for r in rows),
+                'heuristic_npms': mean_or_dash([to_float(r.get('heuristic_npms')) for r in rows]),
+                'heuristic_time_ms': mean_or_dash([to_float(r.get('heuristic_time')) * 1000
+                                                 for r in rows if to_float(r.get('heuristic_time')) is not None]),
+                'paired_n': len(paired),
+                'paired_pm_gain': mean_or_dash([a - b for a, b in paired]),
+            })
+    return summaries
+
+
+def _budget_bound(value, positive=False):
+    value = to_float(value)
+    if value is None or not np.isfinite(value) or abs(value) >= 1e90:
+        return None
+    valid = value > 0 if positive else value >= 0
+    return value if valid else None
+
+
+def generate_time_budget_report(output_dir, time_limits, scales, save_csv=False, tex_dir=None):
+    summaries = summarize_time_budgets(output_dir, time_limits, scales)
+    if save_csv:
+        path = Path(output_dir) / 'gap' / 'time_budget_summary.csv'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open('w', encoding='utf-8', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=list(summaries[0]))
+            writer.writeheader()
+            writer.writerows(summaries)
+        print(f'[CSV] {path}')
+    lines = [r'\begin{table}[htbp]', r'\centering',
+             r'\caption{Independent time-budget runs. Values describe the final returned state; overruns are counted separately. Gap is $(UB-LB)/UB$, excluding missing bounds. Certification is credited only within budget. NoMix and Mix use NoMixPack and MixVM201Pro initialization, respectively.}',
+             r'\begin{tabular}{llrrrrrrrrr}', r'\toprule',
+             r'Scale / Budget & Method & UB & LB & Gap (\%) & $n_{gap}$ & Feasible / $n$ & Certified / $n$ & Overruns & Errors & Time (ms) \\',
+             r'\midrule']
+    for r in summaries:
+        lines.append(f"{r['scale']} / {r['budget_s']:g}s & {r['solver']} & {r['avg_ub']} & "
+                     f"{r['avg_lb']} & {r['avg_rel_gap_percent']} & {r['n_gap']} & "
+                     f"{r['n_feasible']}/{r['n']} & {r['n_certified']}/{r['n']} & "
+                     f"{r['n_over_budget']} & {r['n_error']} & {r['avg_time_ms']} " + r'\\')
+    lines += [r'\bottomrule', r'\end{tabular}', r'\end{table}']
+    content = '\n'.join(lines) + '\n'
+    if tex_dir:
+        Path(tex_dir).mkdir(parents=True, exist_ok=True)
+        path = Path(tex_dir) / 'time_budget_comparison.tex'
+        path.write_text(content, encoding='utf-8')
+        print(f'[TEX] {path}')
+    else:
+        print(content)
+    return summaries
+
+
 def main():
     import io
     import contextlib
@@ -308,6 +415,8 @@ def main():
                         help="Comma-separated scales for exact-verifiable subset.")
     parser.add_argument("--save_csv", action="store_true",
                         help="Save summary CSV in addition to printing LaTeX.")
+    parser.add_argument('--time_limits', default='',
+                        help='Independent budgets, e.g. 10,60,300; read exact matching CSVs.')
     parser.add_argument("--tex_dir", type=str, default=None,
                         help="If set, write each LaTeX table to a .tex file in this directory "
                              "and only print a one-line confirmation per table. If unset, "
@@ -316,6 +425,12 @@ def main():
     args = parser.parse_args()
 
     scales = [x.strip() for x in args.scales.split(",") if x.strip()]
+    if args.time_limits:
+        budgets = sorted(set(float(x) for x in args.time_limits.split(',')))
+        if not budgets or any(not np.isfinite(x) or x <= 0 for x in budgets):
+            parser.error('time_limits must be positive finite numbers')
+        generate_time_budget_report(args.output_dir, budgets, scales, args.save_csv, args.tex_dir)
+        return
     tex_dir = args.tex_dir
     if tex_dir:
         Path(tex_dir).mkdir(parents=True, exist_ok=True)
